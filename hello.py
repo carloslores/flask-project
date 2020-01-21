@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify
+import sqlite3
+
 app = Flask(__name__)
 
 books = [
@@ -25,6 +27,11 @@ books = [
      }
 ]
 
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
 
 #Routing
 
@@ -45,22 +52,46 @@ def page_not_found(error):
 
 @app.route('/api/books/all', methods = ['GET'])
 def api_all():
-    return jsonify(books)
+    #Connecting to the database
+    conn = sqlite3.connect('books.db')
+    conn.row_factory = dict_factory
+    cur = conn.cursor()
+    all_books = cur.execute('SELECT * FROM books;').fetchall()
+
+    return jsonify(all_books)
 
 @app.route('/api/books', methods = ['GET'])
-def api_id():
-    if 'id' in request.args:
-        id = int(request.args['id'])
-    else: 
-        return '<h1>Error: id no encontrado, por favor, especifique un id</h1>'
-    results = []
-    for book in books:
-        if book['id'] == id:
-            results.append(book)
-    if len(results) == 0:
-        return '<h1>Error: el id proporcionado no existe</h1>'
-    else: 
-        return jsonify(results)
+def api_filter():
+    query_params = request.args
+
+    id = query_params.get('id')
+    published = query_params.get('published')
+    author = query_params.get('author')
+
+    query = 'SELECT * FROM books WHERE'
+    to_filter = []
+
+    if id:
+        query += ' id=? AND'
+        to_filter.append(id)
+    if published:
+        query += ' published=? AND'
+        to_filter.append(published)
+    if author:
+        query += ' author=? AND'
+        to_filter.append(author)
+    if not (id or published or author):
+        return page_not_found(404)
+    
+    query = query[:-4] + ';'
+
+    conn = sqlite3.connect('books.db')
+    conn.row_factory = dict_factory
+    cur = conn.cursor()
+
+    results = cur.execute(query, to_filter).fetchall()
+
+    return jsonify(results)
 
 if __name__ == '__main__':
    app.run(debug = True)
